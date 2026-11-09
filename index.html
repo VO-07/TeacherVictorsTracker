@@ -15,6 +15,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
     <!-- Canvas Confetti Library -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Firebase Compat SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     
     <script>
         tailwind.config = {
@@ -883,10 +886,26 @@
             '🐠', '🐟', '🐡', '🐆', '🦓', '🦌', '🐒', '🦧', '🦏', '🦛'
         ];
 
+        // --- FIREBASE CONFIGURATION & INITIALIZATION ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyD9Jh2KKtr5_r3jZRls4wlkhhnQgVdLDdw",
+            authDomain: "teachervictorstracker.firebaseapp.com",
+            projectId: "teachervictorstracker",
+            storageBucket: "teachervictorstracker.firebasestorage.app",
+            messagingSenderId: "453847768435",
+            appId: "1:453847768435:web:0413736c9097e1a9ac3906"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const trackerDocRef = db.collection("trackers").doc("classData");
+        let isReceivingRemoteUpdate = false;
+
         let appState = {
             classes: [],
             activeClassId: null,
             lastActiveDate: null
+            secretPasscode: "cassowary2026"
         };
 
         let selectedClassAvatar = CLASS_AVATARS[0];
@@ -1513,15 +1532,25 @@
             }
         }
 
+        // --- CLOUD SYNC & LOCAL STORAGE ---
         function saveMasterState() {
             try {
+                // 1. Local backup
                 localStorage.setItem('victorTrackerMaster', JSON.stringify(appState));
+
+                // 2. Cloud Sync (Only push if not receiving a remote update)
+                if (!isReceivingRemoteUpdate) {
+                    trackerDocRef.set(appState).catch(err => {
+                        console.warn("Cloud sync warning (offline or permissions):", err);
+                    });
+                }
             } catch (e) {
                 console.error("Storage error:", e);
             }
         }
 
         function loadMasterState() {
+            // 1. Load instantly from local storage while connecting to cloud
             const saved = localStorage.getItem('victorTrackerMaster');
             if (saved) {
                 try {
@@ -1540,6 +1569,39 @@
             } else {
                 showClassHub();
             }
+
+            // 2. Real-Time Cloud Listener (Live sync across computers)
+            trackerDocRef.onSnapshot((doc) => {
+                if (doc.exists) {
+                    const cloudData = doc.data();
+                    if (cloudData && cloudData.classes) {
+                        isReceivingRemoteUpdate = true;
+                        
+                        // Preserve local active screen selection
+                        const localActiveClass = appState.activeClassId;
+                        appState = cloudData;
+                        if (localActiveClass && getActiveClass()) {
+                            appState.activeClassId = localActiveClass;
+                        }
+
+                        localStorage.setItem('victorTrackerMaster', JSON.stringify(appState));
+                        
+                        if (appState.activeClassId && getActiveClass()) {
+                            renderStudentGrid();
+                            updateGoalUI();
+                        } else {
+                            renderClassHub();
+                        }
+                        
+                        isReceivingRemoteUpdate = false;
+                    }
+                } else {
+                    // Document doesn't exist in cloud yet: push local data to start
+                    trackerDocRef.set(appState);
+                }
+            }, (error) => {
+                console.warn("Firestore listener error (using local storage):", error);
+            });
         }
 
         function initDefaultState() {
@@ -1568,6 +1630,7 @@
                 ],
                 activeClassId: null,
                 lastActiveDate: getLocalDateString()
+                secretPasscode: "cassowary26" // <-- ADD THIS LINE
             };
             saveMasterState();
         }
