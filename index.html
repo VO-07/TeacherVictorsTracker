@@ -1536,7 +1536,7 @@
         // --- CLOUD SYNC & LOCAL STORAGE ---
         function saveMasterState() {
             try {
-                appState.secretPasscode = "cassowary26";
+                appState.secretPasscode = "cassowary2026";
 
                 // 1. Local backup always saves
                 localStorage.setItem('victorTrackerMaster', JSON.stringify(appState));
@@ -1582,7 +1582,7 @@
                         
                         const localActiveClass = appState.activeClassId;
                         appState = cloudData;
-                        appState.secretPasscode = "cassowary26";
+                        appState.secretPasscode = "cassowary2026";
 
                         if (localActiveClass && getActiveClass()) {
                             appState.activeClassId = localActiveClass;
@@ -2542,10 +2542,17 @@
                 try {
                     const imported = JSON.parse(e.target.result);
                     if (imported && imported.classes) {
+                        // 1. Ensure the secret passcode is attached
+                        imported.secretPasscode = "cassowary26";
                         appState = imported;
+
+                        // 2. Save to local storage AND push to Firebase
                         saveMasterState();
-                        loadMasterState();
-                        alert("Master JSON successfully restored!");
+
+                        // 3. Immediately render the classes on screen (DO NOT call loadMasterState!)
+                        renderClassHub();
+
+                        alert("Master JSON successfully restored and synced to cloud!");
                     } else {
                         alert("Invalid JSON format.");
                     }
