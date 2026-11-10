@@ -900,12 +900,13 @@
         const db = firebase.firestore();
         const trackerDocRef = db.collection("trackers").doc("classData");
         let isReceivingRemoteUpdate = false;
+        let isInitialCloudLoadComplete = false; // <-- ADD THIS: Prevents fresh devices from clobbering cloud data
 
         let appState = {
             classes: [],
             activeClassId: null,
             lastActiveDate: null,
-            secretPasscode: "cassowary2026"
+            secretPasscode: "cassowary26"
         };
 
         let selectedClassAvatar = CLASS_AVATARS[0];
@@ -1535,14 +1536,13 @@
         // --- CLOUD SYNC & LOCAL STORAGE ---
         function saveMasterState() {
             try {
-                // Ensure passcode is always attached to the payload
                 appState.secretPasscode = "cassowary2026";
 
-                // 1. Local backup
+                // 1. Local backup always saves
                 localStorage.setItem('victorTrackerMaster', JSON.stringify(appState));
 
-                // 2. Cloud Sync (Only push if not receiving a remote update)
-                if (!isReceivingRemoteUpdate) {
+                // 2. Cloud Sync: ONLY push if we are NOT receiving an update AND we have finished our initial cloud sync check
+                if (!isReceivingRemoteUpdate && isInitialCloudLoadComplete) {
                     trackerDocRef.set(appState).catch(err => {
                         console.warn("Cloud sync warning (check Firestore rules/passcode):", err);
                     });
@@ -1553,7 +1553,7 @@
         }
 
         function loadMasterState() {
-            // 1. Load instantly from local storage while connecting to cloud
+            // 1. Load from local cache for instant display
             const saved = localStorage.getItem('victorTrackerMaster');
             if (saved) {
                 try {
@@ -1573,14 +1573,13 @@
                 showClassHub();
             }
 
-            // 2. Real-Time Cloud Listener (Live sync across computers)
+            // 2. Real-Time Cloud Listener
             trackerDocRef.onSnapshot((doc) => {
                 if (doc.exists) {
                     const cloudData = doc.data();
                     if (cloudData && cloudData.classes && cloudData.classes.length > 0) {
                         isReceivingRemoteUpdate = true;
                         
-                        // Preserve whichever screen/class you are currently viewing
                         const localActiveClass = appState.activeClassId;
                         appState = cloudData;
                         appState.secretPasscode = "cassowary2026";
@@ -1601,13 +1600,19 @@
                         isReceivingRemoteUpdate = false;
                     }
                 } else {
-                    // Document doesn't exist in cloud yet: only push if we have real classes
+                    // Document doesn't exist in cloud at all yet: only first device with real classes initializes it
                     if (appState.classes && appState.classes.length > 0) {
                         trackerDocRef.set(appState);
                     }
                 }
+
+                // UNLOCK: Now this device knows what's in the cloud and is safe to write changes
+                isInitialCloudLoadComplete = true;
+
             }, (error) => {
                 console.warn("Firestore listener error (using local storage):", error);
+                // Even on error, allow local editing
+                isInitialCloudLoadComplete = true;
             });
         }
 
@@ -1637,8 +1642,9 @@
                 ],
                 activeClassId: null,
                 lastActiveDate: getLocalDateString(),
-                secretPasscode: "cassowary26" // <-- ADD THIS LINE
+                secretPasscode: "cassowary26"
             };
+            // Note: DO NOT call saveMasterState() here so fresh devices never push demo data to cloud!
         }
 
         function getActiveClass() {
