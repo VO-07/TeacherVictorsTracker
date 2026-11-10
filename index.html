@@ -1535,13 +1535,16 @@
         // --- CLOUD SYNC & LOCAL STORAGE ---
         function saveMasterState() {
             try {
+                // Ensure passcode is always attached to the payload
+                appState.secretPasscode = "cassowary2026";
+
                 // 1. Local backup
                 localStorage.setItem('victorTrackerMaster', JSON.stringify(appState));
 
                 // 2. Cloud Sync (Only push if not receiving a remote update)
                 if (!isReceivingRemoteUpdate) {
                     trackerDocRef.set(appState).catch(err => {
-                        console.warn("Cloud sync warning (offline or permissions):", err);
+                        console.warn("Cloud sync warning (check Firestore rules/passcode):", err);
                     });
                 }
             } catch (e) {
@@ -1574,12 +1577,14 @@
             trackerDocRef.onSnapshot((doc) => {
                 if (doc.exists) {
                     const cloudData = doc.data();
-                    if (cloudData && cloudData.classes) {
+                    if (cloudData && cloudData.classes && cloudData.classes.length > 0) {
                         isReceivingRemoteUpdate = true;
                         
-                        // Preserve local active screen selection
+                        // Preserve whichever screen/class you are currently viewing
                         const localActiveClass = appState.activeClassId;
                         appState = cloudData;
+                        appState.secretPasscode = "cassowary2026";
+
                         if (localActiveClass && getActiveClass()) {
                             appState.activeClassId = localActiveClass;
                         }
@@ -1596,8 +1601,10 @@
                         isReceivingRemoteUpdate = false;
                     }
                 } else {
-                    // Document doesn't exist in cloud yet: push local data to start
-                    trackerDocRef.set(appState);
+                    // Document doesn't exist in cloud yet: only push if we have real classes
+                    if (appState.classes && appState.classes.length > 0) {
+                        trackerDocRef.set(appState);
+                    }
                 }
             }, (error) => {
                 console.warn("Firestore listener error (using local storage):", error);
@@ -1632,7 +1639,6 @@
                 lastActiveDate: getLocalDateString(),
                 secretPasscode: "cassowary26" // <-- ADD THIS LINE
             };
-            saveMasterState();
         }
 
         function getActiveClass() {
